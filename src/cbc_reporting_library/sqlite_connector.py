@@ -74,46 +74,41 @@ class sqlite_connection(object):
 
     def _check_for_missing_columns(self, table, data):
         query = f"PRAGMA table_info({table});"
-        existing = [i[1] for i in self.execute(query)]
-        these_columns = self._get_all_keys(data)
-        adds = [f for f in these_columns if f not in existing]
+        print(query)
+        tables = self.execute(query)
+        if tables:
+            existing = [i[1] for i in self.execute(query)]
+            these_columns = self._get_all_keys(data)
+            adds = [f for f in these_columns if f not in existing]
+        else:
+            adds = []
         return adds
 
     def execute(self, query):
-        try:
-            self.cursor.execute(query)
-            self.conn.commit()
-        except sqlite3.Error as e:
-            print(f"--SQLITE3 ERROR--\n    '{e}'")
-            print(query)
-            raise
-        except ValueErorr:
-            return "SQLITE3 failure"
-        return self.cursor.fetchall()
+        self.cursor.execute(query)
+        self.conn.commit()
+        rows = self.cursor.fetchall()
+        return rows
 
     def execute_dict(self, query):
-        table = re.search(r".+ from(.+?)[;| ]", query)[1]
-        if not self._check_if_table_exists(table):
-            rows = False
-        else:
-            self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
-            self.cursor.execute(query)
-            data = self.cursor.fetchall()
-            keys = data[0].keys()
-            rows = []
-            for row in data:
-                rows.append(dict(zip(keys, [i for i in row])))
-            self.conn.commit()
-            self.conn.row_factory = None
-            self.cursor = self.conn.cursor()
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
+        self.cursor.execute(query)
+        data = self.cursor.fetchall()
+        keys = data[0].keys()
+        rows = []
+        for row in data:
+            rows.append(dict(zip(keys, [i for i in row])))
+        self.conn.commit()
+        self.conn.row_factory = None
+        self.cursor = self.conn.cursor()
         return rows
 
     def insert(self, table, data):
         '''[
-        {"metric1": "value1", "metric2": "value1"}, 
+        {"metric1": "value1", "metric2": "value1"},
         {"metric1": "value2", "metric2": "value2"}
-        ] 
+        ]
         '''
         # Make sure every row has all the keys so we dont have to continually check
         data = self._normalize_data_rows(data)

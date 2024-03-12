@@ -95,13 +95,14 @@ class sqlite_connection(object):
         self.cursor = self.conn.cursor()
         self.cursor.execute(query)
         data = self.cursor.fetchall()
-        keys = data[0].keys()
         rows = []
-        for row in data:
-            rows.append(dict(zip(keys, [i for i in row])))
-        self.conn.commit()
-        self.conn.row_factory = None
-        self.cursor = self.conn.cursor()
+        if data:
+            keys = data[0].keys()
+            for row in data:
+                rows.append(dict(zip(keys, [i for i in row])))
+            self.conn.commit()
+            self.conn.row_factory = None
+            self.cursor = self.conn.cursor()
         return rows
 
     def insert(self, table, data):

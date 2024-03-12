@@ -3,7 +3,7 @@ from simple_term_menu import TerminalMenu
 
 
 class Prompt:
-    def menu(title, options):
+    def menu(title, options, multi=False, pre_sel=[]):
         # Global options
         cursor = "> "
         cursor_style = ("fg_blue", "bold")
@@ -15,9 +15,17 @@ class Prompt:
             menu_cursor_style=cursor_style,
             menu_highlight_style=style,
             cycle_cursor=True,
-            clear_screen=True,)
+            clear_screen=True,
+            multi_select=multi,
+            multi_select_empty_ok=True,
+            multi_select_select_on_accept=False,
+            preselected_entries=pre_sel,
+            )
         menu_entry_index = terminal_menu.show()
-        selection = options[menu_entry_index]
+        if multi:
+            selection = terminal_menu.chosen_menu_entries
+        else:
+            selection = options[menu_entry_index]
         return selection
 
     def dict_menu(title, dict_options):

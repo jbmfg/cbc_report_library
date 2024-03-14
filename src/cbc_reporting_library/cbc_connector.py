@@ -45,7 +45,7 @@ class cbc_connection(object):
                         org_id = org["id"]
                         name = org["name"]
                         break
-                return prod, org_key, org_id, name
+                return backends[prod], org_key, org_id, name
         return False
 
     def get_session(self):
@@ -62,7 +62,23 @@ class cbc_connection(object):
         if data.status_code == 200:
             return data.json()
 
-    def post_req(self, url, data, max_rows=True):
+    def single_post(self, url, data, count_only=False):
+        print (f"POST {url}")
+        url = f"{self.prod}{url}"
+        r = self.session.post(url, json=data)
+        if r.status_code == 200:
+            r = r.json()
+            if "num_found" in r or "numHits" in r:
+                hits = r["num_found"] if "num_found" in r else r["numHits"]
+            if count_only:
+                response_data = hits
+            else:
+                response_data = r["results"] if "results" in r else r["entries"]
+        else:
+            response_data = False
+        return response_data
+
+    def post_req(self, url, data, max_rows=True, count_only=False):
         print (f"POST {url}")
         url = f"{self.prod}{url}"
         r = self.session.post(url, json=data)
@@ -76,6 +92,8 @@ class cbc_connection(object):
                 hits = r["num_found"] if "num_found" in r else r["numHits"]
             else:
                 return r
+            if count_only:
+                return hits
             if "devices" not in url:
                 hits = 10000 if int(hits) > 10000 else hits
             else:

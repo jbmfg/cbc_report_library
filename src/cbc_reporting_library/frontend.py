@@ -5,6 +5,7 @@ from datetime import datetime
 from prompt import Prompt
 from sqlite_connector import sqlite_connection
 from cbc_connector import cbc_connection
+from cbc_data_import import cbc_data_import
 
 
 class cbc_reporting_menu(object):
@@ -12,7 +13,7 @@ class cbc_reporting_menu(object):
     def __init__(self):
         db_filename = "cbc_reporting.db"
         self.db = sqlite_connection(db_filename)
-        self.time_range = "One Month"
+        self.time_range = ["One Month"]
         self.reports_to_run= set()
 
     def pass_func(self):
@@ -29,12 +30,12 @@ class cbc_reporting_menu(object):
         if selection: [self.reports_to_run.add(i) for i in selection]
 
     def alert_reports(self):
-        options = ["Alert Count Over Time", "Alert Severity Breakdown"]
+        options = ["Alert Workflow", "Alert Count Over Time", "Alert Severity Breakdown"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 
     def inventory_reports(self):
-        options = ["Endpoints Deployed", "Version Breakdown", "Bypass/Quarantine Use"]
+        options = ["Endpoints Deployed", "Version Breakdown", "Current Bypass/Quarantine"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 
@@ -59,10 +60,24 @@ class cbc_reporting_menu(object):
         title = "Reports"
         selection = Prompt.dict_menu(title, options)
 
+    def run_reports(self):
+        query = "select uuid, backend, api_id, api_secret, org_key, org_id from settings;"
+        apis = self.db.execute(query)
+        for api_params in apis:
+            runner = cbc_data_import(api_params, self.reports_to_run, self.time_range)
+            runner.make_calls()
+
+    def run_reports_menu(self):
+        options = {
+            "Review Configured Reports": self.view_selected_reports_menu,
+            "Run Reports": self.run_reports
+        }
+        selection = Prompt.dict_menu("Run Reports", options)
+
     def settings_menu(self):
         options = {
             "API Identities": self.identities_menu,
-            f"Report Time Range ({self.time_range})": self.time_range_menu,
+            f"Report Time Range ({', '.join(self.time_range)})": self.time_range_menu,
             "Return to Main Menu": self.main_menu
         }
         selection = Prompt.dict_menu("Settings", options)
@@ -92,10 +107,10 @@ class cbc_reporting_menu(object):
             validate_date(end_date, d2=start_date)
             start_date = start_date.replace(" ", "T") + ".000Z"
             end_date = end_date.replace(" ", "T") + ".000Z"
-            self.time_range = f"{start_date} - {end_date}"
+            self.time_range = [start_date, end_date]
         else:
-            self.time_range = selection
-        print(f"Set time range to {self.time_range}")
+            self.time_range = [selection]
+        print(f"Set time range to {', '.join(self.time_range)}")
         time.sleep(2)
         self.settings_menu()
 
@@ -179,6 +194,7 @@ class cbc_reporting_menu(object):
     def main_menu(self):
         options = {
             "Report Selection": self.reports_menu,
+            "Run Reports": self.run_reports_menu,
             "Settings": self.settings_menu,
             "Quit": self.quit_function,
         }

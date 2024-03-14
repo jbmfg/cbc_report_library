@@ -43,6 +43,12 @@ class sqlite_connection(object):
         elif all([str(val).isnumeric() for val in values]):
             # Values look like integers
             column_type = "INTEGER"
+        elif all([isinstance(val, bool) for val in values]):
+            # values are booleans, store as 0 or 1
+            column_type = "INTEGER"
+        elif all(type(i) in (int, float) for i in values):
+            # values are integers AND floats
+            column_type = "FLOAT"
         elif any(["." in val for val in values]):
             if any([re.search(r'(?<!\.)\.\.(?!\.)', val) for val in values]):
                 # Look for a period with a period before or after (aka >=two periods)
@@ -111,6 +117,15 @@ class sqlite_connection(object):
         {"metric1": "value2", "metric2": "value2"}
         ]
         '''
+        # Some items in data are lists.  Flatten
+        for row in data:
+            for key in list(row):
+                if isinstance(row[key], list):
+                    nested = row.pop(key)
+                    if nested and isinstance(nested[0], dict):
+                        row[key] = str(nested)
+                    elif nested and isinstance(nested[0], str):
+                        row[key] = ", ".join(nested)
         # Make sure every row has all the keys so we dont have to continually check
         data = self._normalize_data_rows(data)
         # Check if the table exists and create if not
@@ -127,6 +142,7 @@ class sqlite_connection(object):
         keys = self._get_all_keys(data)
         fields = "'" + "', '".join([i for i in keys]) + "'"
         for row in data:
+            print(row)
             query = f"INSERT INTO {table} ({fields}) VALUES ({question_marks})"
             self.cursor.execute(query, [row[key] for key in keys])
         self.cursor.execute("COMMIT")

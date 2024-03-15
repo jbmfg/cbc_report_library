@@ -80,7 +80,6 @@ class sqlite_connection(object):
 
     def _check_for_missing_columns(self, table, data):
         query = f"PRAGMA table_info({table});"
-        print(query)
         tables = self.execute(query)
         if tables:
             existing = [i[1] for i in self.execute(query)]
@@ -111,6 +110,23 @@ class sqlite_connection(object):
             self.cursor = self.conn.cursor()
         return rows
 
+    def flatten_json(self, item):
+        out = {}
+        def flatten(subitem, name=''):
+            if isinstance(subitem, dict):
+                for i in subitem:
+                    flatten(subitem[i], name + i + '_')
+            elif type(subitem) is list:
+                if len(subitem) > 0 and isinstance(subitem[0], dict):
+                    for i in subitem[0]:
+                        flatten(subitem[0], name + i + '_')
+                else:
+                    out[name[:-1]] = ", ".join(subitem)
+            else:
+                out[name[:-1]] = subitem
+        flatten(item)
+        return out
+
     def insert(self, table, data):
         '''[
         {"metric1": "value1", "metric2": "value1"},
@@ -118,6 +134,7 @@ class sqlite_connection(object):
         ]
         '''
         # Some items in data are lists.  Flatten
+        '''
         for row in data:
             for key in list(row):
                 if isinstance(row[key], list):
@@ -126,6 +143,9 @@ class sqlite_connection(object):
                         row[key] = str(nested)
                     elif nested and isinstance(nested[0], str):
                         row[key] = ", ".join(nested)
+        '''
+        for x, row in enumerate(data):
+            data[x] = self.flatten_json(row)
         # Make sure every row has all the keys so we dont have to continually check
         data = self._normalize_data_rows(data)
         # Check if the table exists and create if not
@@ -142,7 +162,6 @@ class sqlite_connection(object):
         keys = self._get_all_keys(data)
         fields = "'" + "', '".join([i for i in keys]) + "'"
         for row in data:
-            print(row)
             query = f"INSERT INTO {table} ({fields}) VALUES ({question_marks})"
             self.cursor.execute(query, [row[key] for key in keys])
         self.cursor.execute("COMMIT")

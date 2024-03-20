@@ -1,14 +1,13 @@
 import requests
 
 class cbc_connection(object):
-    def __init__(self, uuid, prod, api_id, api_sec, org_key, org_id):
-        self.uuid = uuid
+    def __init__(self, prod, api_id, api_sec, org_key, org_id):
         self.api_id = api_id
         self.api_sec = api_sec
         self.org_key = org_key
         self.org_id = org_id
         self.prod = prod
-        if self.uuid:
+        if self.org_key:
             self.session = self.get_session()
 
     def get_api_details(self):

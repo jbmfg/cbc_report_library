@@ -1,5 +1,4 @@
 import os
-import uuid
 import time
 from datetime import datetime
 from prompt import Prompt
@@ -13,8 +12,11 @@ class cbc_reporting_menu(object):
     def __init__(self):
         db_filename = "cbc_reporting.db"
         self.db = sqlite_connection(db_filename)
-        self.time_range = ["One Month"]
         self.reports_to_run= set()
+        if self.db._check_if_table_exists("settings"):
+            self.main_menu()
+        else:
+            self.settings_menu()
 
     def pass_func(self):
         pass
@@ -61,10 +63,11 @@ class cbc_reporting_menu(object):
         selection = Prompt.dict_menu(title, options)
 
     def run_reports(self):
-        query = "select uuid, backend, api_id, api_secret, org_key, org_id from settings;"
+        query = "select backend, api_id, api_secret, org_key, org_id, time_range from settings;"
         apis = self.db.execute(query)
         for api_params in apis:
-            runner = cbc_data_import(api_params, self.reports_to_run, self.time_range)
+            time_range = api_params.pop(-1)
+            runner = cbc_data_import(api_params, self.reports_to_run, time_range)
             runner.make_calls()
 
     def run_reports_menu(self):
@@ -75,29 +78,46 @@ class cbc_reporting_menu(object):
         selection = Prompt.dict_menu("Run Reports", options)
 
     def settings_menu(self):
-        options = {
-            "API Identities": self.identities_menu,
-            f"Report Time Range ({', '.join(self.time_range)})": self.time_range_menu,
-            "Return to Main Menu": self.main_menu
-        }
+        def return_to_main():
+            if self.db._check_if_table_exists("settings"):
+                self.main_menu()
+            else:
+                print("Please enter an API key pair first")
+                time.sleep(1)
+                self.settings_menu()
+        options = {}
+        if self.db._check_if_table_exists("settings"):
+            query = "select backend, api_id, api_secret, org_key, org_id, time_range from settings;"
+            settings = self.db.execute_dict(query)
+            if settings:
+                options.update(
+                    {f"{x+1}. {identity['api_id']}":
+                     lambda identity=identity: self.single_identity_menu(identity) for x, identity in enumerate(settings)
+                    }
+                )
+        options.update({
+            "Add New API Key": self.add_identity,
+            "Return to Main Menu": return_to_main,
+            "Exit Program": self.quit_function
+        })
         selection = Prompt.dict_menu("Settings", options)
 
-    def time_range_menu(self):
+    def time_range_menu(self, api_id, cur_time_range):
         def validate_date(d1, d2=None):
             try: datetime.fromisoformat(d1)
             except Exception as e:
                 print(e.title())
                 time.sleep(3)
-                return self.time_range_menu()
+                return self.time_range_menu(api_id)
             if d2:
                 diff = datetime.fromisoformat(d1) - datetime.fromisoformat(d2)
                 if diff.total_seconds() <= 0:
                     print("ERROR: End date must be after start date")
                     time.sleep(3)
-                    return self.time_range_menu()
+                    return self.time_range_menu(api_id)
         options = ["Three Hours", "One Day", "One Week", "Two Weeks"]
         options += ["One Month", "Three Months", "All", "Custom"]
-        title = f"Report Time Range\nCurrent: {self.time_range}"
+        title = f"Report Time Range\nCurrent: {cur_time_range}"
         selection = Prompt.menu(title, options)
         if selection == "Custom":
             start_date = input("Enter UTC/GMT start date (YYYY-MM-DD HH:MM:SS): ")
@@ -107,17 +127,17 @@ class cbc_reporting_menu(object):
             validate_date(end_date, d2=start_date)
             start_date = start_date.replace(" ", "T") + ".000Z"
             end_date = end_date.replace(" ", "T") + ".000Z"
-            self.time_range = [start_date, end_date]
+            time_range = f"{start_date}--{end_date}"
         else:
-            self.time_range = [selection]
-        print(f"Set time range to {', '.join(self.time_range)}")
-        time.sleep(2)
-        self.settings_menu()
+            time_range = selection
+        self.db.update("settings", [{"api_id": api_id, "time_range": time_range}])
+        input(f"Set time range to {time_range}. Enter to continue")
+        return time_range
 
     def check_if_exists(self, api_id):
         exists = False
         if self.db._check_if_table_exists("settings"):
-            existing = self.db.execute("select api_id, uuid from settings;")
+            existing = self.db.execute("select api_id from settings;")
             if existing and api_id in [i[0] for i in existing]:
                 print(f"API Key '{api_id}' already entered")
                 exists = True
@@ -128,65 +148,56 @@ class cbc_reporting_menu(object):
         api_secret = input("Enter API Secret: ")
         if not self.check_if_exists(api_id):
             # Get backend, org_key, and org_id
-            api_details = cbc_connection(None, None, api_id, api_secret, None, None).get_api_details()
+            api_details = cbc_connection(None, api_id, api_secret, None, None).get_api_details()
             if api_details:
-                customer_uuid = str(uuid.uuid4())
                 prod, org_key, org_id, name = api_details
                 data = [{
-                    "uuid": customer_uuid,
                     "backend": prod,
                     "api_id": api_id,
                     "api_secret": api_secret,
                     "org_key": org_key,
-                    "org_id": org_id
+                    "org_id": org_id,
+                    "time_range": "One Month"
                 }]
                 self.db.insert("settings", data)
             else:
                 print(f"API Key '{api_id}' is not valid, please try again")
                 time.sleep(2)
-                self.identities_menu()
-        return self.identities_menu()
+                self.settings_menu()
+        return self.settings_menu()
 
-    def edit_identity(self, identity):
-        api_secret = input("Enter new API Secret: ")
-        identity["api_secret"] = api_secret
+    def edit_identity_secret(self, identity):
+        tr = identity.pop("time_range")
+        old_sec = identity["api_secret"]
+        identity["api_secret"] = input("Enter new API Secret: ")
         api_details = cbc_connection(*list(identity.values())).get_api_details()
         if not api_details:
-            print("API Secret was not accepted, please try again.")
-            time.sleep(2)
-            self.identities_menu()
+            input("API Secret was not accepted, please try again. Enter to continue")
+            identity["api_secret"] = old_sec
         else:
-            self.db.update("settings", [{"uuid": identity['uuid'], "api_secret": api_secret}])
-            self.identities_menu()
-
-    def identities_menu(self):
-        options = {}
-        if self.db._check_if_table_exists("settings"):
-            query = "select uuid, backend, api_id, api_secret, org_key, org_id from settings;"
-            settings = self.db.execute_dict(query)
-            if settings:
-                options.update(
-                    {f"{x+1}. {identity['api_id']}":
-                     lambda: self.single_identity_menu(identity) for x, identity in enumerate(settings)
-                    }
-                )
-        options.update({"Add New": self.add_identity})
-        options.update({"Return to settings": self.settings_menu})
-        selection = Prompt.dict_menu("Identities", options)
+            self.db.update("settings", [{"api_id": identity["api_id"], "api_secret": identity["api_secret"]}])
+        identity["time_range"] = tr
+        return identity
 
     def single_identity_menu(self, identity):
-        options = ["Delete", "Edit API Secret"]
+        options = ["Delete", "Edit API Secret",]
+        options += [f"Select Report Time Window ({identity['time_range']})", "Return to Settings Menu"]
         selection = Prompt.menu(f"Options for {identity['api_id']}", options)
         if selection == "Delete":
             confirm = input(f"Are you sure you want to delete {identity['id']} from program? (Y/N)")
             if confirm.lower() == "y":
                 query = f"DELETE from settings where api_id = '{identity['api_id']}';"
                 self.db.execute(query)
-                print(f"Deleted {identity['api_id']} from program")
-                time.sleep(1)
+                input(f"Deleted {identity['api_id']} from program. Press enter to continue")
+                return self.settings_menu()
         elif selection == "Edit API Secret":
-            self.edit_identity(identity)
-        return self.identities_menu()
+            identity = self.edit_identity_secret(identity)
+            return self.single_identity_menu(identity)
+        elif selection == f"Select Report Time Window ({identity['time_range']})":
+            identity["time_range"] = self.time_range_menu(identity["api_id"], identity["time_range"])
+            return single_identity_menu(identity)
+        elif selection == "Return to Settings Menu":
+            return self.settings_menu()
 
     def quit_function(self):
         print("Thank you for using CCRP!")
@@ -203,4 +214,3 @@ class cbc_reporting_menu(object):
 
 if __name__ == "__main__":
     menu = cbc_reporting_menu()
-    menu.main_menu()

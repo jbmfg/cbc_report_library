@@ -12,7 +12,7 @@ class cbc_reporting_menu(object):
     def __init__(self):
         db_filename = "cbc_reporting.db"
         self.db = sqlite_connection(db_filename)
-        self.reports_to_run= set()
+        self.org_key = None
         if self.db._check_if_table_exists("settings"):
             self.main_menu()
         else:
@@ -23,16 +23,22 @@ class cbc_reporting_menu(object):
 
     def create_report_menu(self, title, report_names):
         title += "\nSpace to select, enter when finished"
-        pre_sel = [i for i in report_names if i in self.reports_to_run]
+        if not self.db._check_if_table_exists("selected_reports"):
+            pre_sel = []
+        else:
+            query = f"select report from selected_reports where org_key = '{self.org_key}';"
+            pre_sel = [i[0] for i in self.db.execute(query) if i[0] in report_names]
+            delete_sql = "'" + "', '".join(pre_sel) + "'"
+            query = f"delete from selected_reports where org_key = '{self.org_key}' and report in ({delete_sql});"
+            self.db.execute(query)
         selection = Prompt.menu(title, report_names, multi=True, pre_sel=pre_sel)
-        not_selected_reports = report_names if not selection else [i for i in report_names if i not in selection]
-        for nsr in list(not_selected_reports):
-            if self.reports_to_run and nsr in self.reports_to_run:
-                self.reports_to_run.remove(nsr)
-        if selection: [self.reports_to_run.add(i) for i in selection]
+        if selection:
+            for report in selection:
+                data = [{"org_key": self.org_key, "report": report}]
+                self.db.insert("selected_reports", data)
 
     def alert_reports(self):
-        options = ["Alert Workflow", "Alert Count Over Time", "Alert Severity Breakdown"]
+        options = ["False vs True Positives", "Alert Workflow", "Alert Count Over Time", "Alert Severity Breakdown"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 
@@ -47,7 +53,9 @@ class cbc_reporting_menu(object):
         return self.reports_menu()
 
     def view_selected_reports_menu(self):
-        options = self.reports_to_run
+        query = f"select report from selected_reports where org_key = '{self.org_key}'"
+        data = self.db.execute(query)
+        options = [i[0] for i in data] if data else []
         self.create_report_menu("Reports Selected to Run", options)
         return self.reports_menu()
 
@@ -63,16 +71,27 @@ class cbc_reporting_menu(object):
         selection = Prompt.dict_menu(title, options)
 
     def run_reports(self):
-        query = "select backend, api_id, api_secret, org_key, org_id, time_range from settings;"
-        apis = self.db.execute(query)
-        for api_params in apis:
-            time_range = api_params.pop(-1)
-            runner = cbc_data_import(api_params, self.reports_to_run, time_range)
-            runner.make_calls()
+        query = "select distinct org_key from settings;"
+        org_keys = [i[0] for i in self.db.execute(query)]
+        for org_key in org_keys:
+            query = f"""
+            select backend, api_id, api_secret, org_key, org_id, time_range
+            from settings
+            where org_key = '{org_key}';
+            """
+            api = list(self.db.execute(query)[0])
+            time_range = api.pop(-1)
+            query = f"select report from selected_reports where org_key = '{org_key}';"
+            data = self.db.execute(query)
+            if data:
+                reports_to_run = [i[0] for i in data]
+                data_pull = cbc_data_import(api, reports_to_run, [time_range])
+                data_pull.make_calls()
+
 
     def run_reports_menu(self):
         options = {
-            "Review Configured Reports": self.view_selected_reports_menu,
+            "Review Configured Reports": self.select_api_key_menu,
             "Run Reports": self.run_reports
         }
         selection = Prompt.dict_menu("Run Reports", options)
@@ -184,7 +203,7 @@ class cbc_reporting_menu(object):
         options += [f"Select Report Time Window ({identity['time_range']})", "Return to Settings Menu"]
         selection = Prompt.menu(f"Options for {identity['api_id']}", options)
         if selection == "Delete":
-            confirm = input(f"Are you sure you want to delete {identity['id']} from program? (Y/N)")
+            confirm = input(f"Are you sure you want to delete {identity['api_id']} from program? (Y/N)")
             if confirm.lower() == "y":
                 query = f"DELETE from settings where api_id = '{identity['api_id']}';"
                 self.db.execute(query)
@@ -195,16 +214,30 @@ class cbc_reporting_menu(object):
             return self.single_identity_menu(identity)
         elif selection == f"Select Report Time Window ({identity['time_range']})":
             identity["time_range"] = self.time_range_menu(identity["api_id"], identity["time_range"])
-            return single_identity_menu(identity)
+            return self.single_identity_menu(identity)
         elif selection == "Return to Settings Menu":
             return self.settings_menu()
 
     def quit_function(self):
         print("Thank you for using CCRP!")
 
+    def select_api_key_menu(self):
+        query = "select api_id, org_key from settings;"
+        api_keys = self.db.execute(query)
+        if len(api_keys) > 1:
+            options = [f"{x + 1}. API ID: {i[0]} Org Key: {i[1]}" for x, i in enumerate(api_keys)]
+            selection = Prompt.menu("Select reports for which API key?", options)
+            selection = int(selection.split(".")[0]) - 1
+            selection = api_keys[selection][1]
+        else:
+            selection = api_keys[0][1]
+        self.org_key = selection
+        return self.reports_menu()
+
     def main_menu(self):
+        self.org_key = None
         options = {
-            "Report Selection": self.reports_menu,
+            "Report Selection": self.select_api_key_menu,
             "Run Reports": self.run_reports_menu,
             "Settings": self.settings_menu,
             "Quit": self.quit_function,

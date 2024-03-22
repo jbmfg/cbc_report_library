@@ -5,6 +5,7 @@ from prompt import Prompt
 from sqlite_connector import sqlite_connection
 from cbc_connector import cbc_connection
 from cbc_data_import import cbc_data_import
+from report_library import cbc_reports
 
 
 class cbc_reporting_menu(object):
@@ -38,7 +39,7 @@ class cbc_reporting_menu(object):
                 self.db.insert("selected_reports", data)
 
     def alert_reports(self):
-        options = ["False vs True Positives", "Alert Workflow", "Alert Count Over Time", "Alert Severity Breakdown"]
+        options = ["False vs True Positives", "Alert Workflow", "Closed Alert Metrics", "Alert Severity Breakdown"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 
@@ -87,7 +88,9 @@ class cbc_reporting_menu(object):
                 reports_to_run = [i[0] for i in data]
                 data_pull = cbc_data_import(api, reports_to_run, [time_range])
                 data_pull.make_calls()
-
+                reports = cbc_reports(self.db, org_key, reports_to_run)
+                reports.run_reports()
+                reports.wb.close()
 
     def run_reports_menu(self):
         options = {

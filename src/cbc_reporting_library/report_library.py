@@ -85,8 +85,6 @@ class cbc_reports(object):
         write_rows(self.wb, sheet, rows)
         pie_chart(self.wb, sheet, sheet_name, rows, (0, 4))
 
-
-
 def write_rows(wb, sheet, data, linkBool=False, setwid=True, col1url=False, bolder=False):
     bold = wb.add_format({"bold": True})
     # first get the length of the longest sting to set column widths
@@ -166,8 +164,6 @@ def pie_chart(wb, sheet, sheet_name, data, chart_loc):
     }
     chart.add_series(chart_data)
     sheet.insert_chart(*chart_loc, chart)
-
-
 
 if __name__ == "__main__":
     from sqlite_connector import sqlite_connection

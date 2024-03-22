@@ -39,7 +39,7 @@ class cbc_reporting_menu(object):
                 self.db.insert("selected_reports", data)
 
     def alert_reports(self):
-        options = ["False vs True Positives", "Alert Workflow", "Closed Alert Metrics", "Alert Severity Breakdown"]
+        options = ["False vs True Positives", "Alert Workflow Metrics", "Closed Alert Metrics", "Alert Severity Breakdown"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 

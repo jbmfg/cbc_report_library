@@ -89,13 +89,42 @@ class cbc_reports(object):
         query = f"""
         select process_effective_reputation, count(*) 
         from alert_data 
-        where sensor_action in ('DENY', 'TERMINATE') 
+        where sensor_action in ('DENY', 'TERMINATE')
+        and org_key = '{self.org_key}'
         group by process_effective_reputation;
         """
         data = self.db.execute(query)
         data.insert(0, ["Effective Reputation", "Alert Count"])
         write_rows(self.wb, sheet, data)
         pie_chart(self.wb, sheet, sheet_name, data, (0, 4))
+
+    def fp_tp_closure_metrics(self, sheet_name):
+        sheet = self.wb.add_worksheet(sheet_name)
+        query = f"""
+        select backend_timestamp,
+        determination_change_timestamp,
+        determination_changed_by,
+        determination_value
+        from alert_data
+        where org_key = '{self.org_key}'
+        and determination_value is not 'NONE';
+        """
+        data = self.db.execute(query)
+        dt_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+        user_cts = {}
+        times_to_determine = []
+        for alert_open, determination_time, user, reason in data:
+            open_dt = datetime.strptime(alert_open, dt_format)
+            determine_dt = datetime.strptime(determination_time, dt_format)
+            user_cts[user] = user_cts.get(user, 0) + 1
+            minutes_to_determine = int((determine_dt - open_dt).total_seconds()/60)
+            times_to_determine.append(minutes_to_determine)
+        avg_time_to_determine = round(sum(times_to_determine) / len(times_to_determine))
+        rows = [["User", "Count of Determinations (TP/FP)"]] + [[user, user_cts[user]] for user in user_cts]
+        rows.append([])
+        rows.append(["Average Time to Determine: ", f"{avg_time_to_determine} minutes"])
+        write_rows(self.wb, sheet, rows)
+        pie_chart(self.wb, sheet, sheet_name, rows, (0, 4))
 
 def write_rows(wb, sheet, data, linkBool=False, setwid=True, col1url=False, bolder=False):
     bold = wb.add_format({"bold": True})
@@ -183,7 +212,7 @@ def pie_chart(wb, sheet, sheet_name, data, chart_loc):
 if __name__ == "__main__":
     from sqlite_connector import sqlite_connection
     db = sqlite_connection('cbc_reporting.db')
-    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics", "Blocks Reputation"])
+    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics", "Blocks Reputation", "FP and TP Closure Metrics"])
     reports.run_reports()
     reports.wb.close()
 

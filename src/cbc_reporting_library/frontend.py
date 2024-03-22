@@ -40,6 +40,7 @@ class cbc_reporting_menu(object):
 
     def alert_reports(self):
         options = ["False vs True Positives", "Alert Workflow Metrics", "Closed Alert Metrics", "Alert Severity Breakdown"]
+        options += ["Blocks Reputation"]
         self.create_report_menu("Alert Reports", options)
         return self.reports_menu()
 

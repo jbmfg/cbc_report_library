@@ -17,8 +17,7 @@ class cbc_reports(object):
             f(report)
         self.charting_settings()
 
-    def _method_template(self):
-        sheet_name = ""
+    def _method_template(self, sheet_name):
         sheet = self.wb.add_worksheet(sheet_name)
         query = f"""
         """
@@ -84,6 +83,19 @@ class cbc_reports(object):
         rows.append(["Average time to close: ", f"{avg_time_to_close} minutes"])
         write_rows(self.wb, sheet, rows)
         pie_chart(self.wb, sheet, sheet_name, rows, (0, 4))
+
+    def reputation_of_blocks(self, sheet_name):
+        sheet = self.wb.add_worksheet(sheet_name)
+        query = f"""
+        select process_effective_reputation, count(*) 
+        from alert_data 
+        where sensor_action in ('DENY', 'TERMINATE') 
+        group by process_effective_reputation;
+        """
+        data = self.db.execute(query)
+        data.insert(0, ["Effective Reputation", "Alert Count"])
+        write_rows(self.wb, sheet, data)
+        pie_chart(self.wb, sheet, sheet_name, data, (0, 4))
 
 def write_rows(wb, sheet, data, linkBool=False, setwid=True, col1url=False, bolder=False):
     bold = wb.add_format({"bold": True})
@@ -156,7 +168,10 @@ def column_chart(wb, sheet, sheet_name, titles, data, chart_loc):
 
 def pie_chart(wb, sheet, sheet_name, data, chart_loc):
     chart = wb.add_chart({"type": "pie"})
-    end_of_data = data.index([]) - 1
+    if [] in data:
+        end_of_data = data.index([]) - 1
+    else:
+        end_of_data = len(data) - 1
     chart_data = {
         "name": data[0][0],
         "categories": [sheet_name, 1, 0, end_of_data, 0],
@@ -168,7 +183,7 @@ def pie_chart(wb, sheet, sheet_name, data, chart_loc):
 if __name__ == "__main__":
     from sqlite_connector import sqlite_connection
     db = sqlite_connection('cbc_reporting.db')
-    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics"])
+    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics", "Blocks Reputation"])
     reports.run_reports()
     reports.wb.close()
 

@@ -126,6 +126,23 @@ class cbc_reports(object):
         write_rows(self.wb, sheet, rows)
         pie_chart(self.wb, sheet, sheet_name, rows, (0, 4))
 
+    def alert_severity_breakdown(self, sheet_name):
+        sheet = self.wb.add_worksheet(sheet_name)
+        query = f"""
+        select severity,
+        count(*)
+        from alert_data
+        where org_key = '{self.org_key}'
+        group by severity;
+        """
+        data_dict = {str(i[0]): i[1] for i in self.db.execute(query)}
+        for x in range(1,11):
+            data_dict[str(x)] = data_dict.get(str(x), 0)
+        rows = [["Severity", "Alert Count"]] + [[str(x), data_dict[str(x)]] for x in range(1, 11)]
+        write_rows(self.wb, sheet, rows)
+        titles = ("Alert Severity", "Severity", "Count")
+        column_chart(self.wb, sheet, sheet_name, titles, rows, (0, 4))
+
 def write_rows(wb, sheet, data, linkBool=False, setwid=True, col1url=False, bolder=False):
     bold = wb.add_format({"bold": True})
     # first get the length of the longest sting to set column widths
@@ -212,7 +229,7 @@ def pie_chart(wb, sheet, sheet_name, data, chart_loc):
 if __name__ == "__main__":
     from sqlite_connector import sqlite_connection
     db = sqlite_connection('cbc_reporting.db')
-    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics", "Blocks Reputation", "FP and TP Closure Metrics"])
+    reports = cbc_reports(db, '7PESY63N', ["False vs True Positives", "Closed Alert Metrics", "Blocks Reputation", "FP and TP Closure Metrics", "Alert Severity Breakdown"])
     reports.run_reports()
     reports.wb.close()
 
